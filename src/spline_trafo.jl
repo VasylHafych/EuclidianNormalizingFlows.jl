@@ -44,6 +44,7 @@ struct RationalQuadraticInv{P<:Union{Real,AbstractVector{<:Real}}} <: SplineTraf
 end
 
 @functor RationalQuadraticInv
+export RationalQuadraticInv
 
 Base.:(==)(a::RationalQuadraticInv, b::RationalQuadraticInv) = a.widths == b.widths && a.heights == b.heights && a.derivatives == b.derivatives
 
@@ -62,7 +63,7 @@ function ChangesOfVariables.with_logabsdet_jacobian(
     xtr = map(x->x[1],res)
     ladj =  map(x->sum(map(x->x[2],x)) ,eachcol(res))
     
-    return xtr, nothing
+    return xtr, ladj'
 end
 
 function InverseFunctions.inverse(f::RationalQuadraticInv)
@@ -70,14 +71,6 @@ function InverseFunctions.inverse(f::RationalQuadraticInv)
 end
 
 # Utills 
-
-function _searchsortedfirst(trafo::RationalQuadratic, x::Real) 
-    return searchsortedfirst(trafo.widths, x) - 1 
-end
-
-function _searchsortedfirst(trafo::RationalQuadraticInv, x::Real) 
-    return searchsortedfirst(trafo.heights, x) - 1 
-end
 
 function _compute_params(trafo, T, x, k, K)
     # Width
@@ -100,7 +93,7 @@ function _compute_params(trafo, T, x, k, K)
     return [x, w_k, w, h_k, h_kplus1, Δy, s, d_k, d_kplus1]
 end
 
-function _compute_vals(trafo::RationalQuadratic, x::Real, w_k::Real, w::Real, h_k::Real, h_kplus1::Real, Δy::Real, s::Real, d_k::Real, d_kplus1::Real)
+function _compute_vals_forw(x::Real, w_k::Real, w::Real, h_k::Real, h_kplus1::Real, Δy::Real, s::Real, d_k::Real, d_kplus1::Real)
 
     ξ = (x - w_k) / w
     # Eq. (14) from [1]
@@ -115,7 +108,7 @@ function _compute_vals(trafo::RationalQuadratic, x::Real, w_k::Real, w::Real, h_
     return (g, logjac)
 end
 
-function _compute_vals(trafo::RationalQuadraticInv, x::Real, w_k::Real, w::Real, h_k::Real, h_kplus1::Real, Δy::Real, s::Real, d_k::Real, d_kplus1::Real)
+function _compute_vals_bw(x::Real, w_k::Real, w::Real, h_k::Real, h_kplus1::Real, Δy::Real, s::Real, d_k::Real, d_kplus1::Real)
 
     ds = d_kplus1 + d_k - 2 * s
 
@@ -133,18 +126,14 @@ function _compute_vals(trafo::RationalQuadraticInv, x::Real, w_k::Real, w::Real,
     return (g, nothing)
 end
 
-function _spline_transform(trafo::ST, x::Real) where {ST<:SplineTrafo}
+function _spline_transform(trafo::RationalQuadratic, x::Real) 
     
-    widths = trafo.widths
-    heights = trafo.heights
-    derivatives = trafo.derivatives
-    
-    T = promote_type(eltype(widths), eltype(heights), eltype(derivatives), eltype(x))
+    T = promote_type(eltype(trafo.widths), eltype(trafo.heights), eltype(trafo.derivatives), eltype(x))
 
     # Number of bins K
-    K = length(widths)
+    K = length(trafo.widths)
     
-    k = _searchsortedfirst(trafo, x)
+    k = searchsortedfirst(trafo.widths, x) - 1 
 
     # If x outside interval mask apply identity transform
     if (k >= K) || (k == 0)
@@ -153,6 +142,30 @@ function _spline_transform(trafo::ST, x::Real) where {ST<:SplineTrafo}
             
     params = _compute_params(trafo, T, x, k, K)
     
-    return _compute_vals(trafo, params...)
+    return _compute_vals_forw(params...)
+end   
+
+
+function _spline_transform(trafo::RationalQuadraticInv, x::Real) 
+    
+    T = promote_type(eltype(trafo.widths), eltype(trafo.heights), eltype(trafo.derivatives), eltype(x))
+
+    # Number of bins K
+    K = length(trafo.widths)
+    
+    k = searchsortedfirst(trafo.heights, x) - 1 
+
+    # If x outside interval mask apply identity transform
+    if (k >= K) || (k == 0)
+        return (one(T) * x, zero(T) * x)
+    end
+            
+    params = _compute_params(trafo, T, x, k, K)
+    val_bw, _ = _compute_vals_bw(params...)
+    
+    params = _compute_params(trafo, T, val_bw, k, K)
+    _, logjac = _compute_vals_forw(params...)
+    
+    return (val_bw, -logjac)
 end   
 
