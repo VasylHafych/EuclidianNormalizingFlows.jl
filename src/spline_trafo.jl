@@ -1,6 +1,4 @@
-abstract type SplineTrafo end
-
-struct RationalQuadratic{P<:Union{Real,AbstractVector{<:Real}}} <: SplineTrafo
+struct RationalQuadratic{P<:Union{Real,AbstractVector{<:Real}}} <: Function
     widths::P
     heights::P
     derivatives::P
@@ -22,6 +20,7 @@ function ChangesOfVariables.with_logabsdet_jacobian(
     f::RationalQuadratic,
     x::AbstractMatrix{<:Real}
 )
+    
     res = map(x->_spline_transform(f, x), x)
     xtr = map(x->x[1],res)
     ladj =  map(x->sum(map(x->x[2],x)) ,eachcol(res))
@@ -37,7 +36,7 @@ end
 # **** Inverse (to do: Add log Jacobian)
 
 
-struct RationalQuadraticInv{P<:Union{Real,AbstractVector{<:Real}}} <: SplineTrafo
+struct RationalQuadraticInv{P<:Union{Real,AbstractVector{<:Real}}} <: Function
     widths::P
     heights::P
     derivatives::P
