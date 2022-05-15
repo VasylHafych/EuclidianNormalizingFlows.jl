@@ -29,6 +29,7 @@ using Parameters
 using SpecialFunctions
 using StatsBase
 using ValueShapes
+using KernelAbstractions
 
 import Zygote
 import ZygoteRules

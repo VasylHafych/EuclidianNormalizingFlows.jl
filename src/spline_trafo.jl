@@ -1,7 +1,10 @@
-struct RationalQuadratic{P<:Union{Real,AbstractVector{<:Real}}} <: Function
-    widths::P
-    heights::P
-    derivatives::P
+const KERNEL_DEVICE = CPU()
+const KERNEL_SIZE = 16
+
+struct RationalQuadratic{R<:AbstractMatrix{<:Real}} <: Function
+    widths::R
+    heights::R
+    derivatives::R
 end
 
 export RationalQuadratic
@@ -13,19 +16,13 @@ Base.isequal(a::RationalQuadratic, b::RationalQuadratic) = isequal(a.widths, b.w
 
 Base.hash(x::RationalQuadratic, h::UInt) = hash(x.widths, hash(x.heights, hash(x.derivatives, hash(:RationalQuadratic, hash(:EuclidianNormalizingFlows, h)))))
 
-(f::RationalQuadratic)(x::Real) = _spline_transform(f, x)[1]
-(f::RationalQuadratic)(x::AbstractMatrix{<:Real}) = map(x->f(x...), x)
+(f::RationalQuadratic)(x::AbstractMatrix{<:Real}) = spline_forward(f.widths, f.heights, f.derivatives, x)[1]
 
 function ChangesOfVariables.with_logabsdet_jacobian(
     f::RationalQuadratic,
     x::AbstractMatrix{<:Real}
 )
-    
-    res = map(x->_spline_transform(f, x), x)
-    xtr = map(x->x[1],res)
-    ladj =  map(x->sum(map(x->x[2],x)) ,eachcol(res))
-    
-    return xtr, ladj'
+    return spline_forward(f.widths, f.heights, f.derivatives, x)
 end
 
 function InverseFunctions.inverse(f::RationalQuadratic)
@@ -33,13 +30,10 @@ function InverseFunctions.inverse(f::RationalQuadratic)
 end
 
 
-# **** Inverse (to do: Add log Jacobian)
-
-
-struct RationalQuadraticInv{P<:Union{Real,AbstractVector{<:Real}}} <: Function
-    widths::P
-    heights::P
-    derivatives::P
+struct RationalQuadraticInv{R<:AbstractMatrix{<:Real}} <: Function
+    widths::R
+    heights::R
+    derivatives::R
 end
 
 @functor RationalQuadraticInv
@@ -51,46 +45,19 @@ Base.isequal(a::RationalQuadraticInv, b::RationalQuadraticInv) = isequal(a.width
 
 Base.hash(x::RationalQuadraticInv, h::UInt) = hash(x.widths, hash(x.heights, hash(x.derivatives, hash(:RationalQuadraticInv, hash(:EuclidianNormalizingFlows, h)))))
 
-(f::RationalQuadraticInv)(x::Real) = _spline_transform(f, x)[1]
-(f::RationalQuadraticInv)(x::AbstractMatrix{<:Real}) = map(x->f(x...), x)
+(f::RationalQuadraticInv)(x::AbstractMatrix{<:Real}) = spline_backward(f.widths, f.heights, f.derivatives, x)[1]
 
 function ChangesOfVariables.with_logabsdet_jacobian(
     f::RationalQuadraticInv,
     x::AbstractMatrix{<:Real}
 )
-    res = map(x->_spline_transform(f, x), x)
-    xtr = map(x->x[1],res)
-    ladj =  map(x->sum(map(x->x[2],x)) ,eachcol(res))
-    
-    return xtr, ladj'
+    return f(x)
 end
 
 function InverseFunctions.inverse(f::RationalQuadraticInv)
     return RationalQuadratic(f.widths, f.heights, f.derivatives)
 end
 
-# Utills 
-
-function _compute_params(trafo, T, x, k, K)
-    # Width
-    # If k == 0 put it in the bin `[-B, widths[1]]`
-    w_k = trafo.widths[k] #(k == 0) ? -widths[end] :
-    w = trafo.widths[k + 1] - w_k
-
-    # Height
-    h_k = trafo.heights[k] # (k == 0) ? -heights[end] : 
-    h_kplus1 = (k == K) ? trafo.heights[end] : trafo.heights[k + 1]
-    
-    # Slope 
-    Δy = trafo.heights[k + 1] - h_k
-    s = Δy / w
-
-    # Derivatives
-    d_k = trafo.derivatives[k] #(k == 0) ? one(T) :
-    d_kplus1 = (k == K - 1) ? one(T) : trafo.derivatives[k + 1]
-    
-    return [x, w_k, w, h_k, h_kplus1, Δy, s, d_k, d_kplus1]
-end
 
 function _compute_vals_forw(x::Real, w_k::Real, w::Real, h_k::Real, h_kplus1::Real, Δy::Real, s::Real, d_k::Real, d_kplus1::Real)
 
@@ -105,6 +72,134 @@ function _compute_vals_forw(x::Real, w_k::Real, w::Real, h_k::Real, h_kplus1::Re
     logjac = log(numerator_jl) - 2 * log(denominator)
 
     return (g, logjac)
+end
+
+function _compute_params(
+        widths::AbstractVector{<:Real}, 
+        heights::AbstractVector{<:Real}, 
+        derivatives::AbstractVector{<:Real}, 
+        T::DataType, 
+        x::Real, 
+        k::Real, 
+        K::Real
+    ) 
+    
+    # Width
+    # If k == 0 put it in the bin `[-B, widths[1]]`
+    w_k = widths[k] #(k == 0) ? -widths[end] :
+    w = widths[k + 1] - w_k
+
+    # Height
+    h_k = heights[k] # (k == 0) ? -heights[end] : 
+    h_kplus1 = (k == K) ? heights[end] : heights[k + 1]
+
+    # Slope 
+    Δy = heights[k + 1] - h_k
+    s = Δy / w
+
+    # Derivatives
+    d_k = derivatives[k] #(k == 0) ? one(T) :
+    d_kplus1 = (k == K - 1) ? one(T) : derivatives[k + 1]
+
+    return [x, w_k, w, h_k, h_kplus1, Δy, s, d_k, d_kplus1]
+end
+
+function spline_forward(
+        width::AbstractMatrix{<:Real}, 
+        height::AbstractMatrix{<:Real}, 
+        deriv::AbstractMatrix{<:Real}, 
+        X::AbstractMatrix{<:Real}
+    )
+    
+    Y = zeros(size(X))
+    LADJ = zeros(size(X))
+    
+    kernel! = spline_forward_kernel!(KERNEL_DEVICE, KERNEL_SIZE)
+    
+    ev = kernel!(Y, LADJ, width, height, deriv, X, ndrange=size(X)) 
+    
+    wait(ev)
+    
+    return Y, LADJ
+end
+
+@kernel function spline_forward_kernel!(
+        Y::AbstractMatrix{<:Real},
+        LADJ::AbstractMatrix{<:Real}, 
+        widths::AbstractMatrix{<:Real}, 
+        heights::AbstractMatrix{<:Real}, 
+        derivs::AbstractMatrix{<:Real}, 
+        X::AbstractMatrix{<:Real}
+    )
+    
+    i, j = @index(Global, NTuple)
+    
+    T = promote_type(eltype(widths[i,1]), eltype(heights[i,1]), eltype(derivs[i,1]), eltype(X[i,j]))
+    
+    K = length(widths[i,:]) 
+    k = searchsortedfirst(widths[i,:], X[i,j]) - 1 
+    
+    
+    if (k >= K) || (k == 0)
+        Y[i,j] = X[i,j]
+        LADJ[i,j] = zero(typeof(X[i,j]))
+    else
+        params = _compute_params(widths[i,:], heights[i,:], derivs[i,:], T, X[i,j], k, K)
+        Y[i,j], LADJ[i,j] = _compute_vals_forw(params...)
+        
+    end
+end
+
+function spline_backward(
+        width::AbstractMatrix{<:Real}, 
+        height::AbstractMatrix{<:Real}, 
+        deriv::AbstractMatrix{<:Real}, 
+        X::AbstractMatrix{<:Real}
+    )
+    
+    Y = zeros(size(X))
+    LADJ = zeros(size(X))
+    
+    kernel! = spline_backward_kernel!(KERNEL_DEVICE, KERNEL_SIZE)
+    
+    ev = kernel!(Y, LADJ, width, height, deriv, X, ndrange=size(X)) 
+    
+    wait(ev)
+    
+    return Y, LADJ
+end
+
+@kernel function spline_backward_kernel!(
+        Y::AbstractMatrix{<:Real},
+        LADJ::AbstractMatrix{<:Real}, 
+        widths::AbstractMatrix{<:Real}, 
+        heights::AbstractMatrix{<:Real}, 
+        derivs::AbstractMatrix{<:Real}, 
+        X::AbstractMatrix{<:Real}
+    )
+    
+    i, j = @index(Global, NTuple)
+    
+    T = promote_type(eltype(widths[i,1]), eltype(heights[i,1]), eltype(derivs[i,1]), eltype(X[i,j]))
+    
+    K = length(widths[i,:]) 
+    k = searchsortedfirst(heights[i,:], X[i,j]) - 1 
+    
+    
+    if (k >= K) || (k == 0)
+        Y[i,j] = X[i,j]
+        LADJ[i,j] = zero(typeof(X[i,j]))
+    else
+        params = _compute_params(widths[i,:], heights[i,:], derivs[i,:], T, X[i,j], k, K)
+        ytransf, _ = _compute_vals_bw(params...)
+    
+        params = _compute_params(widths[i,:], heights[i,:], derivs[i,:], T, ytransf, k, K)
+        _, logjac = _compute_vals_forw(params...)
+        
+        Y[i,j] = ytransf
+        LADJ[i,j] = -logjac
+    end
+    
 end
 
 function _compute_vals_bw(x::Real, w_k::Real, w::Real, h_k::Real, h_kplus1::Real, Δy::Real, s::Real, d_k::Real, d_kplus1::Real)
@@ -124,47 +219,3 @@ function _compute_vals_bw(x::Real, w_k::Real, w::Real, h_k::Real, h_kplus1::Real
     g = ξ * w + w_k
     return (g, nothing)
 end
-
-function _spline_transform(trafo::RationalQuadratic, x::Real) 
-    
-    T = promote_type(eltype(trafo.widths), eltype(trafo.heights), eltype(trafo.derivatives), eltype(x))
-
-    # Number of bins K
-    K = length(trafo.widths)
-    
-    k = searchsortedfirst(trafo.widths, x) - 1 
-
-    # If x outside interval mask apply identity transform
-    if (k >= K) || (k == 0)
-        return (one(T) * x, zero(T) * x)
-    end
-            
-    params = _compute_params(trafo, T, x, k, K)
-    
-    return _compute_vals_forw(params...)
-end   
-
-
-function _spline_transform(trafo::RationalQuadraticInv, x::Real) 
-    
-    T = promote_type(eltype(trafo.widths), eltype(trafo.heights), eltype(trafo.derivatives), eltype(x))
-
-    # Number of bins K
-    K = length(trafo.widths)
-    
-    k = searchsortedfirst(trafo.heights, x) - 1 
-
-    # If x outside interval mask apply identity transform
-    if (k >= K) || (k == 0)
-        return (one(T) * x, zero(T) * x)
-    end
-            
-    params = _compute_params(trafo, T, x, k, K)
-    val_bw, _ = _compute_vals_bw(params...)
-    
-    params = _compute_params(trafo, T, val_bw, k, K)
-    _, logjac = _compute_vals_forw(params...)
-    
-    return (val_bw, -logjac)
-end   
-
