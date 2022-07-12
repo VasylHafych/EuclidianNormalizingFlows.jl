@@ -89,6 +89,21 @@ function spline_forward(
 
     ndims = size(x, 1)
     nsmpls = size(x, 2)
+    
+    # add boundary conditions:
+    w = convert(ElasticArray{eltype(w)}, w)
+    h = convert(ElasticArray{eltype(h)}, h)
+    d = convert(ElasticArray{eltype(d)}, d)
+
+    prepend!(w, -B)
+    prepend!(h, -B)
+    prepend!(d, 1)
+    append!(d, 1)
+
+    # do they need to be converted back to arrays?
+    w = convert(Array{eltype(w)}, w)
+    h = convert(Array{eltype(h)}, h)
+    d = convert(Array{eltype(d)}, d)
 
     y = zeros(T, ndims, nsmpls)
     LogJac = zeros(T, 1, nsmpls)
@@ -122,6 +137,21 @@ function spline_forward_pullback(
     nsmpls = size(x, 2)
     nparams = size(w, 2)
 
+    # add boundary conditions:
+    w = convert(ElasticArray{eltype(w)}, w)
+    h = convert(ElasticArray{eltype(h)}, h)
+    d = convert(ElasticArray{eltype(d)}, d)
+
+    prepend!(w, -B)
+    prepend!(h, -B)
+    prepend!(d, 1)
+    append!(d, 1)
+
+    # do they need to be converted back to arrays?
+    w = convert(Array{eltype(w)}, w)
+    h = convert(Array{eltype(h)}, h)
+    d = convert(Array{eltype(d)}, d)
+
     y = zeros(T, ndims, nsmpls)
     LogJac = zeros(T, 1, nsmpls)
 
@@ -152,21 +182,16 @@ function spline_forward_pullback(
 end
 
 @kernel function spline_forward_kernel!(
-    x::AbstractArray,
+    @Const(x)::AbstractArray,
     y::AbstractArray,
     LogJac::AbstractArray,
-    w_inp::AbstractArray,
-    h_inp::AbstractArray,
-    d_inp::AbstractArray;
-    B = 5
+    @Const(w)::AbstractArray,
+    @Const(h)::AbstractArray,
+    @Const(d)::AbstractArray;
+    @Const(B) = 5
 )
 
     i, j = @index(Global, NTuple)
-
-    # Create 1D arrays and add boundary conditions:
-    w = convert.(eltype(w_inp), [-B; w_inp[i,:]...])
-    h = convert.(eltype(h_inp), [-B; h_inp[i,:]...])
-    d = convert.(eltype(d_inp), [1; d_inp[i,:]...; 1])
 
     K = length(w)
 
@@ -178,7 +203,7 @@ end
     isoutside = (k1 >= K) || (k1 == 0)
     k = Base.ifelse(isoutside, k2, k1)
 
-    x_tmp = Base.ifelse(isoutside, w[k], x[i,j]) # Simplifies unnecessary calculations
+    @private x_tmp = Base.ifelse(isoutside, w[k], x[i,j]) # Simplifies unnecessary calculations
     (yᵢⱼ, LogJacᵢⱼ, _, _, _, _, _, _) = eval_forward_spline_params(w[k], w[k+1], h[k], h[k+1], d[k], d[k+1], x_tmp, K, k)
 
     @atomic y[i,j] = Base.ifelse(isoutside, x[i,j], yᵢⱼ) 
@@ -188,28 +213,23 @@ end
 
 
 @kernel function spline_forward_pullback_kernel!(
-        x::AbstractArray,
+        @Const(x)::AbstractArray,
         y::AbstractArray,
         LogJac::AbstractArray,
-        w_inp::AbstractArray,
-        h_inp::AbstractArray,
-        d_inp::AbstractArray,
+        @Const(w)::AbstractArray,
+        @Const(h)::AbstractArray,
+        @Const(d)::AbstractArray,
         ∂y∂w::AbstractArray,
         ∂y∂h::AbstractArray,
         ∂y∂d::AbstractArray,
         ∂LogJac∂w::AbstractArray,
         ∂LogJac∂h::AbstractArray,
         ∂LogJac∂d::AbstractArray,
-        tangent::ChainRulesCore.Tangent;
-        B = 5
+        @Const(tangent)::ChainRulesCore.Tangent;
+        @Const(B) = 5
     )
 
     i, j = @index(Global, NTuple)
-
-    # Create 1D arrays and add boundary conditions:
-    w = convert.(eltype(w_inp), [-B; w_inp[i,:]...])
-    h = convert.(eltype(h_inp), [-B; h_inp[i,:]...])
-    d = convert.(eltype(d_inp), [1; d_inp[i,:]...; 1])
 
     K = length(w)
 
@@ -373,6 +393,21 @@ function spline_backward(
     ndims = size(x, 1)
     nsmpls = size(x, 2)
 
+    # add boundary conditions:
+    w = convert(ElasticArray{eltype(w)}, w)
+    h = convert(ElasticArray{eltype(h)}, h)
+    d = convert(ElasticArray{eltype(d)}, d)
+
+    prepend!(w, -B)
+    prepend!(h, -B)
+    prepend!(d, 1)
+    append!(d, 1)
+
+    # do they need to be converted back to arrays?
+    w = convert(Array{eltype(w)}, w)
+    h = convert(Array{eltype(h)}, h)
+    d = convert(Array{eltype(d)}, d)
+
     y = zeros(T, ndims, nsmpls)
     LogJac = zeros(T, 1, nsmpls)
 
@@ -388,24 +423,19 @@ function spline_backward(
 end
 
 @kernel function spline_backward_kernel!(
-        x::AbstractMatrix{M0},
+        @Const(x)::AbstractMatrix{M0},
         y::AbstractMatrix{M1},
         LogJac::AbstractMatrix{M2},
-        w_inp::AbstractMatrix{M3},
-        h_inp::AbstractMatrix{M4},
-        d_inp::AbstractMatrix{M5};
-        B=5.
+        @Const(w)::AbstractMatrix{M3},
+        @Const(h)::AbstractMatrix{M4},
+        @Const(d)::AbstractMatrix{M5};
+        @Const(B)=5.
     ) where {M0<:Real, M1<:Real, M2<:Real, M3<:Real, M4<:Real, M5<:Real,}
 
     i, j = @index(Global, NTuple)
 
     T = promote_type(M0, M1, M2, M3, M4, M5)
     
-    # Create 1D arrays and add boudnary conditions:
-    w = convert.(eltype(w_inp), [-B; w_inp[i,:]...])
-    h = convert.(eltype(h_inp), [-B; h_inp[i,:]...])
-    d = convert.(eltype(d_inp), [1; d_inp[i,:]...; 1])
-
     K = length(w)
 
     # Find the bin index
