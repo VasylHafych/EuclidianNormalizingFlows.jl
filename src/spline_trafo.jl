@@ -182,13 +182,13 @@ function spline_forward_pullback(
 end
 
 @kernel function spline_forward_kernel!(
-    @Const(x)::AbstractArray,
+    x::AbstractArray,
     y::AbstractArray,
     LogJac::AbstractArray,
-    @Const(w)::AbstractArray,
-    @Const(h)::AbstractArray,
-    @Const(d)::AbstractArray;
-    @Const(B) = 5
+    w::AbstractArray,
+    h::AbstractArray,
+    d::AbstractArray;
+    B = 5
 )
 
     i, j = @index(Global, NTuple)
@@ -203,7 +203,7 @@ end
     isoutside = (k1 >= K) || (k1 == 0)
     k = Base.ifelse(isoutside, k2, k1)
 
-    @private x_tmp = Base.ifelse(isoutside, w[k], x[i,j]) # Simplifies unnecessary calculations
+    x_tmp = Base.ifelse(isoutside, w[k], x[i,j]) # Simplifies unnecessary calculations
     (yᵢⱼ, LogJacᵢⱼ, _, _, _, _, _, _) = eval_forward_spline_params(w[k], w[k+1], h[k], h[k+1], d[k], d[k+1], x_tmp, K, k)
 
     @atomic y[i,j] = Base.ifelse(isoutside, x[i,j], yᵢⱼ) 
@@ -213,20 +213,20 @@ end
 
 
 @kernel function spline_forward_pullback_kernel!(
-        @Const(x)::AbstractArray,
+        x::AbstractArray,
         y::AbstractArray,
         LogJac::AbstractArray,
-        @Const(w)::AbstractArray,
-        @Const(h)::AbstractArray,
-        @Const(d)::AbstractArray,
+        w::AbstractArray,
+        h::AbstractArray,
+        d::AbstractArray,
         ∂y∂w::AbstractArray,
         ∂y∂h::AbstractArray,
         ∂y∂d::AbstractArray,
         ∂LogJac∂w::AbstractArray,
         ∂LogJac∂h::AbstractArray,
         ∂LogJac∂d::AbstractArray,
-        @Const(tangent)::ChainRulesCore.Tangent;
-        @Const(B) = 5
+        tangent::ChainRulesCore.Tangent;
+        B = 5
     )
 
     i, j = @index(Global, NTuple)
@@ -423,13 +423,13 @@ function spline_backward(
 end
 
 @kernel function spline_backward_kernel!(
-        @Const(x)::AbstractMatrix{M0},
+        x::AbstractMatrix{M0},
         y::AbstractMatrix{M1},
         LogJac::AbstractMatrix{M2},
-        @Const(w)::AbstractMatrix{M3},
-        @Const(h)::AbstractMatrix{M4},
-        @Const(d)::AbstractMatrix{M5};
-        @Const(B)=5.
+        w::AbstractMatrix{M3},
+        h::AbstractMatrix{M4},
+        d::AbstractMatrix{M5};
+        B=5.
     ) where {M0<:Real, M1<:Real, M2<:Real, M3<:Real, M4<:Real, M5<:Real,}
 
     i, j = @index(Global, NTuple)
