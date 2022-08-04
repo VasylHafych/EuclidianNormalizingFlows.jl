@@ -49,5 +49,6 @@ include("scale_shift_trafo.jl")
 include("center_stretch.jl")
 include("johnson_trafo.jl")
 include("spline_trafo.jl")
+include("coupling_trafo.jl")
 
 end # module
