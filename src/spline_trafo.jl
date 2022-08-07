@@ -521,6 +521,10 @@ function _softplus(x::AbstractMatrix)
     return val
 end
 
+function _sigmoid(x::AbstractVector)
+    return 1 ./ (1 .+ exp.(.-x))
+end
+
 midpoint(lo::T, hi::T) where T<:Integer = lo + ((hi - lo) >>> 0x01)
 binary_log(x::T) where {T<:Integer} = 8 * sizeof(T) - leading_zeros(x - 1)
 
