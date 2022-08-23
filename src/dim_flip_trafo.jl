@@ -13,13 +13,9 @@ end
 
 (f::DimFlip)(x::AbstractMatrix{<:Real}) = dim_flip(x)[1]
 
-function dim_flip(x::Abstractmatrix)
-    e = size(x,1)
-    negs = collect(1:e)
-    negs .-= 1
-return vcat([x[e-i,:] for i in negs]), 1
-
-function bu()
-    println("ju")
+function dim_flip(x::AbstractMatrix)
+    d = round(Int, size(x,1)/2)
+    x₁ = x[1:d,:]
+    x₂ = x[d+1:end,:]
+    return vcat(x₂,x₁), ones(size(x,2))
 end
-export bu

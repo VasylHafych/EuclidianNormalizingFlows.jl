@@ -80,8 +80,8 @@ end
 
 function spline_forward(trafo::TrainableRQSpline, x::AbstractMatrix{<:Real}; B=5.)
 
-    @assert size(trafo.widths, 1) == size(trafo.heights, 1) == size(trafo.derivatives, 1) == size(x, 1) >= 1
-    @assert size(trafo.widths, 2) == size(trafo.heights, 2) == (size(trafo.derivatives, 2) + 1) >= 2
+    # @assert size(trafo.widths, 1) == size(trafo.heights, 1) == size(trafo.derivatives, 1) == size(x, 1) >= 1
+    # @assert size(trafo.widths, 2) == size(trafo.heights, 2) == (size(trafo.derivatives, 2) + 1) >= 2
 
     ndims = size(x, 1)
 
@@ -127,7 +127,7 @@ function spline_forward(
 
     wait(ev)
 
-    return y, sum(logJac, dims=1)
+    return y, vec(sum(logJac, dims=2))
 end
 
 
@@ -173,7 +173,7 @@ function spline_forward_pullback(
         )
 
     wait(ev)
-    logJac = sum(logJac, dims=1)
+    logJac  = vec(sum(logJac, dims=2))
 
     return NoTangent(), @thunk(tangent[1] .* exp.(logJac)), ∂y∂w, ∂y∂h, ∂y∂d, ∂LogJac∂w, ∂LogJac∂h, ∂LogJac∂d
 end
@@ -486,44 +486,39 @@ end
 # Utils: 
 
 function _softmax(x::AbstractVector)
-
     exp_x = exp.(x)
     sum_exp_x = sum(exp_x)
-
     return exp_x ./ sum_exp_x 
 end
 
 function _softmax(x::AbstractMatrix)
-
-    val = cat([_softmax(i) for i in eachrow(x)]..., dims=2)'
-
-    return val 
+    return hcat(_softmax.(x[i,:] for i in axes(x,1))...)'
 end
 
 function _cumsum(x::AbstractVector; B = 5)
     return 2 .* B .* cumsum(x) .- B 
 end
 
-function _cumsum(x::AbstractMatrix)
-
-    return cat([_cumsum(i) for i in eachrow(x)]..., dims=2)'
+function _cumsum(x::AbstractMatrix; B = 5)
+    return copy((2 .* B .* cumsum(x, dims=2) .- B))
 end
 
 function _softplus(x::AbstractVector)
-
     return log.(exp.(x) .+ 1) 
 end
 
 function _softplus(x::AbstractMatrix)
-
-    val = cat([_softplus(i) for i in eachrow(x)]..., dims=2)'
-
-    return val
+    return (log.(exp.(x) .+ 1))
 end
 
-function _sigmoid(x::AbstractVector)
-    return 1 ./ (1 .+ exp.(.-x))
+function _sigmoid(x::Real)
+    return 1 / (1 + exp(-x))
 end
+
+function _relu(x::Real)
+    return x > 0 ? x : 0
+end
+
 
 midpoint(lo::T, hi::T) where T<:Integer = lo + ((hi - lo) >>> 0x01)
 binary_log(x::T) where {T<:Integer} = 8 * sizeof(T) - leading_zeros(x - 1)

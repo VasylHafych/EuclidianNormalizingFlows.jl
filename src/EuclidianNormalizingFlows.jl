@@ -31,6 +31,7 @@ using StatsBase
 using ValueShapes
 using KernelAbstractions
 using KernelAbstractions: @atomic
+using Flux
 
 import Zygote
 import ZygoteRules
@@ -50,5 +51,7 @@ include("center_stretch.jl")
 include("johnson_trafo.jl")
 include("spline_trafo.jl")
 include("coupling_trafo.jl")
+include("dim_flip_trafo.jl")
+include("composite_coupling.jl")
 
 end # module

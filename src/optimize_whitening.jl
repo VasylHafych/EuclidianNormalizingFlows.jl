@@ -49,22 +49,3 @@ function optimize_whitening(
     end
     (result = trafo, optimizer_state = state, negll_history = vcat(negll_history, negll_hist))
 end
-
-function optimize_whitening_coupling(
-    smpls::VectorOfSimilarVectors{<:Real}, initial_trafo::Function, optimizer;
-    nepochs::Integer = 100,
-    optstate = Optimisers.setup(optimizer, deepcopy(initial_trafo)),
-    negll_history = Vector{Float64}(),
-)
-    X = flatview(smpls)
-    trafo = deepcopy(initial_trafo)
-    state = deepcopy(optstate)
-    negll_hist = Vector{Float64}()
-    for i in 1:nepochs 
-        negll, d_trafo = mvnormal_negll_trafograd(trafo, X)
-        state, trafo = Optimisers.update(state, trafo, d_trafo)
-        push!(negll_hist, negll)
-    end
-    (result = trafo, optimizer_state = state, negll_history = vcat(negll_history, negll_hist))
-end
-export optimize_trafo
