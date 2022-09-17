@@ -21,6 +21,7 @@ using Distributions
 using DocStringExtensions
 using ElasticArrays
 using ForwardDiffPullbacks
+using FunctionChains
 using Functors
 using InverseFunctions
 using Optim
@@ -52,6 +53,7 @@ include("johnson_trafo.jl")
 include("spline_trafo.jl")
 include("coupling_trafo.jl")
 include("dim_flip_trafo.jl")
+include("utils.jl")
 include("composite_coupling.jl")
 
 end # module

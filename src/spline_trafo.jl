@@ -127,7 +127,7 @@ function spline_forward(
 
     wait(ev)
 
-    return y, vec(sum(logJac, dims=2))
+    return y, vec(sum(logJac, dims=1))
 end
 
 
@@ -173,7 +173,7 @@ function spline_forward_pullback(
         )
 
     wait(ev)
-    logJac  = vec(sum(logJac, dims=2))
+    logJac  = vec(sum(logJac, dims=1))
 
     return NoTangent(), @thunk(tangent[1] .* exp.(logJac)), ∂y∂w, ∂y∂h, ∂y∂d, ∂LogJac∂w, ∂LogJac∂h, ∂LogJac∂d
 end
@@ -188,18 +188,18 @@ end
 )
     i, j = @index(Global, NTuple)
 
-    K = size(w, 2)
+    K = size(w, 1) - 1 # minus one is to take boundary value into account
 
     # Find the bin index
-    k1 = searchsortedfirst_impl(w[i,:], x[i,j]) - 1
+    k1 = searchsortedfirst_impl(w[:,j], x[i,j]) - 1
     k2 = one(typeof(k1))
 
     # Is inside of range
     isinside = (k1 < K) && (k1 > 0)
     k = Base.ifelse(isinside, k1, k2)
 
-    x_tmp = Base.ifelse(isinside, x[i,j], w[i,k]) # Simplifies calculations
-    (yᵢⱼ, LogJacᵢⱼ) = eval_forward_spline_params(w[i,k], w[i,k+1], h[i,k], h[i,k+1], d[i,k], d[i,k+1], x_tmp)
+    x_tmp = Base.ifelse(isinside, x[i,j], w[k,j]) # Simplifies calculations
+    (yᵢⱼ, LogJacᵢⱼ) = eval_forward_spline_params(w[k,j], w[k+1,j], h[k,j], h[k+1,j], d[k,j], d[k+1,j], x_tmp)
 
     y[i,j] = Base.ifelse(isinside, yᵢⱼ, x[i,j]) 
     logJac[i, j] += Base.ifelse(isinside, LogJacᵢⱼ, zero(typeof(LogJacᵢⱼ)))
@@ -224,18 +224,18 @@ end
 
     i, j = @index(Global, NTuple)
 
-    K = size(w, 2)
+    K = size(w, 1) - 1 
 
     # Find the bin index
-    k1 = searchsortedfirst_impl(w[i,:], x[i,j]) - 1
+    k1 = searchsortedfirst_impl(w[:,j], x[i,j]) - 1
     k2 = one(typeof(k1))
 
     # Is inside of range
     isinside = (k1 < K) && (k1 > 0)
     k = Base.ifelse(isinside, k1, k2)
 
-    x_tmp = Base.ifelse(isinside, x[i,j], w[i,k]) # Simplifies calculations
-    (yᵢⱼ, LogJacᵢⱼ, ∂y∂wₖ, ∂y∂hₖ, ∂y∂dₖ, ∂LogJac∂wₖ, ∂LogJac∂hₖ, ∂LogJac∂dₖ) = eval_forward_spline_params_with_grad(w[i,k], w[i,k+1], h[i,k], h[i,k+1], d[i,k], d[i,k+1], x_tmp)
+    x_tmp = Base.ifelse(isinside, x[i,j], w[k,j]) # Simplifies calculations
+    (yᵢⱼ, LogJacᵢⱼ, ∂y∂wₖ, ∂y∂hₖ, ∂y∂dₖ, ∂LogJac∂wₖ, ∂LogJac∂hₖ, ∂LogJac∂dₖ) = eval_forward_spline_params_with_grad(w[k,j], w[k+1,j], h[k,j], h[k+1,j], d[k,j], d[k+1,j], x_tmp)
 
     y[i,j] = Base.ifelse(isinside, yᵢⱼ, x[i,j]) 
     logJac[i, j] += Base.ifelse(isinside, LogJacᵢⱼ, zero(typeof(LogJacᵢⱼ)))
@@ -246,9 +246,9 @@ end
     @atomic ∂y∂w_tangent[i, left_edge_ind+1]      += tangent[1][i,j] * Base.ifelse(isinside * left_edge_istrue, ∂y∂wₖ[1], zero(eltype(∂y∂wₖ)))
     @atomic ∂y∂h_tangent[i, left_edge_ind+1]      += tangent[1][i,j] * Base.ifelse(isinside * left_edge_istrue, ∂y∂hₖ[1], zero(eltype(∂y∂hₖ)))
     @atomic ∂y∂d_tangent[i, left_edge_ind+1]      += tangent[1][i,j] * Base.ifelse(isinside * left_edge_istrue, ∂y∂dₖ[1], zero(eltype(∂y∂dₖ)))
-    @atomic ∂LogJac∂w_tangent[i, left_edge_ind+1] += tangent[2][1,j] * Base.ifelse(isinside * left_edge_istrue, ∂LogJac∂wₖ[1], zero(eltype(∂LogJac∂wₖ)))
-    @atomic ∂LogJac∂h_tangent[i, left_edge_ind+1] += tangent[2][1,j] * Base.ifelse(isinside * left_edge_istrue, ∂LogJac∂hₖ[1], zero(eltype(∂LogJac∂hₖ)))
-    @atomic ∂LogJac∂d_tangent[i, left_edge_ind+1] += tangent[2][1,j] * Base.ifelse(isinside * left_edge_istrue, ∂LogJac∂dₖ[1], zero(eltype(∂LogJac∂dₖ)))
+    @atomic ∂LogJac∂w_tangent[i, left_edge_ind+1] += tangent[2][j,1] * Base.ifelse(isinside * left_edge_istrue, ∂LogJac∂wₖ[1], zero(eltype(∂LogJac∂wₖ)))
+    @atomic ∂LogJac∂h_tangent[i, left_edge_ind+1] += tangent[2][j,1] * Base.ifelse(isinside * left_edge_istrue, ∂LogJac∂hₖ[1], zero(eltype(∂LogJac∂hₖ)))
+    @atomic ∂LogJac∂d_tangent[i, left_edge_ind+1] += tangent[2][j,1] * Base.ifelse(isinside * left_edge_istrue, ∂LogJac∂dₖ[1], zero(eltype(∂LogJac∂dₖ)))
  
     right_edge_istrue = (k < K - 1)
     right_edge_ind = Base.ifelse(right_edge_istrue, k, one(typeof(k)))
@@ -256,9 +256,9 @@ end
     @atomic ∂y∂w_tangent[i, right_edge_ind+1]       += tangent[1][i,j] * Base.ifelse(isinside * right_edge_istrue, ∂y∂wₖ[2], zero(eltype(∂y∂wₖ)))
     @atomic ∂y∂h_tangent[i, right_edge_ind+1]       += tangent[1][i,j] * Base.ifelse(isinside * right_edge_istrue, ∂y∂hₖ[2], zero(eltype(∂y∂hₖ)))
     @atomic ∂y∂d_tangent[i, right_edge_ind+1]       += tangent[1][i,j] * Base.ifelse(isinside * right_edge_istrue, ∂y∂dₖ[2], zero(eltype(∂y∂dₖ)))
-    @atomic ∂LogJac∂w_tangent[i, right_edge_ind+1]  += tangent[2][1,j] * Base.ifelse(isinside * right_edge_istrue, ∂LogJac∂wₖ[2], zero(eltype(∂LogJac∂wₖ)))
-    @atomic ∂LogJac∂h_tangent[i, right_edge_ind+1]  += tangent[2][1,j] * Base.ifelse(isinside * right_edge_istrue, ∂LogJac∂hₖ[2], zero(eltype(∂LogJac∂hₖ)))
-    @atomic ∂LogJac∂d_tangent[i, right_edge_ind+1]  += tangent[2][1,j] * Base.ifelse(isinside * right_edge_istrue, ∂LogJac∂dₖ[2], zero(eltype(∂LogJac∂dₖ)))
+    @atomic ∂LogJac∂w_tangent[i, right_edge_ind+1]  += tangent[2][j,1] * Base.ifelse(isinside * right_edge_istrue, ∂LogJac∂wₖ[2], zero(eltype(∂LogJac∂wₖ)))
+    @atomic ∂LogJac∂h_tangent[i, right_edge_ind+1]  += tangent[2][j,1] * Base.ifelse(isinside * right_edge_istrue, ∂LogJac∂hₖ[2], zero(eltype(∂LogJac∂hₖ)))
+    @atomic ∂LogJac∂d_tangent[i, right_edge_ind+1]  += tangent[2][j,1] * Base.ifelse(isinside * right_edge_istrue, ∂LogJac∂dₖ[2], zero(eltype(∂LogJac∂dₖ)))
 
 end
 
@@ -420,7 +420,7 @@ function spline_backward(
 
     wait(ev)
 
-    return y, sum(logJac, dims=1)
+    return y, vec(sum(logJac, dims=1))
 end
 
 @kernel function spline_backward_kernel!(
@@ -434,18 +434,18 @@ end
 
     i, j = @index(Global, NTuple)
     
-    K = size(w, 2)
+    K = size(w, 1) - 1
 
     # Find the bin index
-    k1 = searchsortedfirst_impl(h[i,:], x[i,j]) - 1
+    k1 = searchsortedfirst_impl(h[:,j], x[i,j]) - 1
     k2 = one(typeof(k1))
 
    # Is inside of range
    isinside = (k1 < K) && (k1 > 0)
    k = Base.ifelse(isinside, k1, k2)
 
-    x_tmp = Base.ifelse(isinside, x[i,j], h[i,k]) # Simplifies unnecessary calculations
-    (yᵢⱼ, LogJacᵢⱼ) = eval_backward_spline_params(w[i,k], w[i,k+1], h[i,k], h[i,k+1], d[i,k], d[i,k+1], x_tmp)
+    x_tmp = Base.ifelse(isinside, x[i,j], h[k,j]) # Simplifies unnecessary calculations
+    (yᵢⱼ, LogJacᵢⱼ) = eval_backward_spline_params(w[k,j], w[k+1,j], h[k,j], h[k+1,j], d[k,j], d[k+1,j], x_tmp)
 
     y[i,j] = Base.ifelse(isinside, yᵢⱼ, x[i,j]) 
     logJac[i, j] += Base.ifelse(isinside, LogJacᵢⱼ, zero(typeof(LogJacᵢⱼ)))
@@ -481,65 +481,4 @@ function eval_backward_spline_params(
     LogJac = log(abs(Δx * grad)) - 2*log(abs(denom))
 
     return y, LogJac
-end
-
-# Utils: 
-
-function _softmax(x::AbstractVector)
-    exp_x = exp.(x)
-    sum_exp_x = sum(exp_x)
-    return exp_x ./ sum_exp_x 
-end
-
-function _softmax(x::AbstractMatrix)
-    return hcat(_softmax.(x[i,:] for i in axes(x,1))...)'
-end
-
-function _cumsum(x::AbstractVector; B = 5)
-    return 2 .* B .* cumsum(x) .- B 
-end
-
-function _cumsum(x::AbstractMatrix; B = 5)
-    return copy((2 .* B .* cumsum(x, dims=2) .- B))
-end
-
-function _softplus(x::AbstractVector)
-    return log.(exp.(x) .+ 1) 
-end
-
-function _softplus(x::AbstractMatrix)
-    return (log.(exp.(x) .+ 1))
-end
-
-function _sigmoid(x::Real)
-    return 1 / (1 + exp(-x))
-end
-
-function _relu(x::Real)
-    return x > 0 ? x : 0
-end
-
-
-midpoint(lo::T, hi::T) where T<:Integer = lo + ((hi - lo) >>> 0x01)
-binary_log(x::T) where {T<:Integer} = 8 * sizeof(T) - leading_zeros(x - 1)
-
-function searchsortedfirst_impl(
-        v::AbstractVector, 
-        x::Real
-    )
-    
-    u = one(Integer)
-    lo = one(Integer) - u
-    hi = length(v) + u
-    
-    n = binary_log(length(v))+1
-    m = one(Integer)
-    
-    @inbounds for i in 1:n
-        m_1 = midpoint(lo, hi)
-        m = Base.ifelse(lo < hi - u, m_1, m)
-        lo = Base.ifelse(v[m] < x, m, lo)
-        hi = Base.ifelse(v[m] < x, hi, m)
-    end
-    return hi
 end
