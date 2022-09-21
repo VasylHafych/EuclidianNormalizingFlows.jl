@@ -10,6 +10,34 @@ function CouplingRQSpline(n_dims::Integer, K::Integer = 20)
     return CouplingRQSpline(nn1, nn2)
 end
 
+function get_weights(n_dims::Integer)
+
+    d = n_dims > 2 ? round(Integer, n_dims / 2) : 1
+
+    w1 = Flux.glorot_uniform(20, d)
+    w2 = Flux.glorot_uniform(20, d)
+
+    return w1, w2
+end
+
+export get_weights
+
+function CouplingRQSpline(w1::AbstractMatrix, w2::AbstractMatrix, K::Integer = 20)
+
+    nn1 = Chain(Dense(w1, true, relu),
+                Dense(20 => 20, relu),
+                Dense(20 => (3K-1))
+                )
+
+    nn2 = Chain(Dense(w2, true, relu),
+                Dense(20 => 20, relu),
+                Dense(20 => (3K-1))
+                )
+    
+    return CouplingRQSpline(nn1, nn2)
+end
+
+
 export CouplingRQSpline
 @functor CouplingRQSpline
 
@@ -30,13 +58,13 @@ end
 export CouplingRQSplineInv
 @functor CouplingRQSplineInv
 
-Base.:(==)(a::RQSplineCouplingInv, b::RQSplineCouplingInv) = a.nn1 == b.nn1 &&  a.nn2 == b.nn1
+Base.:(==)(a::CouplingRQSplineInv, b::CouplingRQSplineInv) = a.nn1 == b.nn1 &&  a.nn2 == b.nn1
 
-Base.isequal(a::RQSplineCouplingInv, b::RQSplineCouplingInv) = isequal(a.nn1, b.nn1)  && isequal(a.nn2, b.nn2)
+Base.isequal(a::CouplingRQSplineInv, b::CouplingRQSplineInv) = isequal(a.nn1, b.nn1)  && isequal(a.nn2, b.nn2)
 
-Base.hash(x::RQSplineCouplingInv, h::UInt) = hash(x.nn1, hash(x.nn2, hash(:TrainableRQSpline, hash(:EuclidianNormalizingFlows, h))))
+Base.hash(x::CouplingRQSplineInv, h::UInt) = hash(x.nn1, hash(x.nn2, hash(:TrainableRQSpline, hash(:EuclidianNormalizingFlows, h))))
 
-(f::RQSplineCouplingInv)(x::AbstractMatrix{<:Real}) = coupling_trafo(f, x)[1]
+(f::CouplingRQSplineInv)(x::AbstractMatrix{<:Real}) = coupling_trafo(f, x)[1]
 
 
 function ChangesOfVariables.with_logabsdet_jacobian(
@@ -46,19 +74,19 @@ function ChangesOfVariables.with_logabsdet_jacobian(
     return coupling_trafo(f, x)
 end
 
-function InverseFunctions.inverse(f::RQSplineCoupling)
+function InverseFunctions.inverse(f::CouplingRQSpline)
     return CouplingRQSplineInv(f.nn1, f.nn2)
 end
 
 
 function ChangesOfVariables.with_logabsdet_jacobian(
-    f::RQSplineCouplingInv,
+    f::CouplingRQSplineInv,
     x::AbstractMatrix{<:Real}
 )
     return coupling_trafo(f, x)
 end
 
-function InverseFunctions.inverse(f::RQSplineCouplingInv)
+function InverseFunctions.inverse(f::CouplingRQSplineInv)
     return CouplingRQSpline(f.nn1, f.nn2)
 end
 

@@ -127,7 +127,7 @@ function spline_forward(
 
     wait(ev)
 
-    return y, vec(sum(logJac, dims=1))
+    return y, sum(logJac, dims=1)
 end
 
 
@@ -146,18 +146,18 @@ function spline_forward_pullback(
 
     ndims = size(x, 1)
     nsmpls = size(x, 2)
-    nparams = size(w, 2) 
+    nparams = size(w, 1) 
 
     y = zeros(T, ndims, nsmpls)
     logJac = zeros(T, ndims, nsmpls)
 
-    ∂y∂w = zeros(T, ndims, nparams)
-    ∂y∂h = zeros(T, ndims, nparams)
-    ∂y∂d = zeros(T, ndims, nparams+1)
+    ∂y∂w = zeros(T, nparams, nsmpls)
+    ∂y∂h = zeros(T, nparams, nsmpls)
+    ∂y∂d = zeros(T, nparams+1, nsmpls) # check if this shouldn't be -1 
 
-    ∂LogJac∂w = zeros(T, ndims, nparams)
-    ∂LogJac∂h = zeros(T, ndims, nparams)
-    ∂LogJac∂d = zeros(T, ndims, nparams+1)
+    ∂LogJac∂w = zeros(T, nparams, nsmpls)
+    ∂LogJac∂h = zeros(T, nparams, nsmpls)
+    ∂LogJac∂d = zeros(T, nparams+1, nsmpls)
 
     device = KernelAbstractions.get_device(x)
     n = device isa GPU ? 256 : 4
@@ -173,7 +173,7 @@ function spline_forward_pullback(
         )
 
     wait(ev)
-    logJac  = vec(sum(logJac, dims=1))
+    logJac  = sum(logJac, dims=1)
 
     return NoTangent(), @thunk(tangent[1] .* exp.(logJac)), ∂y∂w, ∂y∂h, ∂y∂d, ∂LogJac∂w, ∂LogJac∂h, ∂LogJac∂d
 end
@@ -246,9 +246,9 @@ end
     @atomic ∂y∂w_tangent[i, left_edge_ind+1]      += tangent[1][i,j] * Base.ifelse(isinside * left_edge_istrue, ∂y∂wₖ[1], zero(eltype(∂y∂wₖ)))
     @atomic ∂y∂h_tangent[i, left_edge_ind+1]      += tangent[1][i,j] * Base.ifelse(isinside * left_edge_istrue, ∂y∂hₖ[1], zero(eltype(∂y∂hₖ)))
     @atomic ∂y∂d_tangent[i, left_edge_ind+1]      += tangent[1][i,j] * Base.ifelse(isinside * left_edge_istrue, ∂y∂dₖ[1], zero(eltype(∂y∂dₖ)))
-    @atomic ∂LogJac∂w_tangent[i, left_edge_ind+1] += tangent[2][j,1] * Base.ifelse(isinside * left_edge_istrue, ∂LogJac∂wₖ[1], zero(eltype(∂LogJac∂wₖ)))
-    @atomic ∂LogJac∂h_tangent[i, left_edge_ind+1] += tangent[2][j,1] * Base.ifelse(isinside * left_edge_istrue, ∂LogJac∂hₖ[1], zero(eltype(∂LogJac∂hₖ)))
-    @atomic ∂LogJac∂d_tangent[i, left_edge_ind+1] += tangent[2][j,1] * Base.ifelse(isinside * left_edge_istrue, ∂LogJac∂dₖ[1], zero(eltype(∂LogJac∂dₖ)))
+    @atomic ∂LogJac∂w_tangent[i, left_edge_ind+1] += tangent[2][1,j] * Base.ifelse(isinside * left_edge_istrue, ∂LogJac∂wₖ[1], zero(eltype(∂LogJac∂wₖ)))
+    @atomic ∂LogJac∂h_tangent[i, left_edge_ind+1] += tangent[2][1,j] * Base.ifelse(isinside * left_edge_istrue, ∂LogJac∂hₖ[1], zero(eltype(∂LogJac∂hₖ)))
+    @atomic ∂LogJac∂d_tangent[i, left_edge_ind+1] += tangent[2][1,j] * Base.ifelse(isinside * left_edge_istrue, ∂LogJac∂dₖ[1], zero(eltype(∂LogJac∂dₖ)))
  
     right_edge_istrue = (k < K - 1)
     right_edge_ind = Base.ifelse(right_edge_istrue, k, one(typeof(k)))
@@ -256,9 +256,9 @@ end
     @atomic ∂y∂w_tangent[i, right_edge_ind+1]       += tangent[1][i,j] * Base.ifelse(isinside * right_edge_istrue, ∂y∂wₖ[2], zero(eltype(∂y∂wₖ)))
     @atomic ∂y∂h_tangent[i, right_edge_ind+1]       += tangent[1][i,j] * Base.ifelse(isinside * right_edge_istrue, ∂y∂hₖ[2], zero(eltype(∂y∂hₖ)))
     @atomic ∂y∂d_tangent[i, right_edge_ind+1]       += tangent[1][i,j] * Base.ifelse(isinside * right_edge_istrue, ∂y∂dₖ[2], zero(eltype(∂y∂dₖ)))
-    @atomic ∂LogJac∂w_tangent[i, right_edge_ind+1]  += tangent[2][j,1] * Base.ifelse(isinside * right_edge_istrue, ∂LogJac∂wₖ[2], zero(eltype(∂LogJac∂wₖ)))
-    @atomic ∂LogJac∂h_tangent[i, right_edge_ind+1]  += tangent[2][j,1] * Base.ifelse(isinside * right_edge_istrue, ∂LogJac∂hₖ[2], zero(eltype(∂LogJac∂hₖ)))
-    @atomic ∂LogJac∂d_tangent[i, right_edge_ind+1]  += tangent[2][j,1] * Base.ifelse(isinside * right_edge_istrue, ∂LogJac∂dₖ[2], zero(eltype(∂LogJac∂dₖ)))
+    @atomic ∂LogJac∂w_tangent[i, right_edge_ind+1]  += tangent[2][1,j] * Base.ifelse(isinside * right_edge_istrue, ∂LogJac∂wₖ[2], zero(eltype(∂LogJac∂wₖ)))
+    @atomic ∂LogJac∂h_tangent[i, right_edge_ind+1]  += tangent[2][1,j] * Base.ifelse(isinside * right_edge_istrue, ∂LogJac∂hₖ[2], zero(eltype(∂LogJac∂hₖ)))
+    @atomic ∂LogJac∂d_tangent[i, right_edge_ind+1]  += tangent[2][1,j] * Base.ifelse(isinside * right_edge_istrue, ∂LogJac∂dₖ[2], zero(eltype(∂LogJac∂dₖ)))
 
 end
 
@@ -420,7 +420,7 @@ function spline_backward(
 
     wait(ev)
 
-    return y, vec(sum(logJac, dims=1))
+    return y, sum(logJac, dims=1)
 end
 
 @kernel function spline_backward_kernel!(
@@ -440,9 +440,9 @@ end
     k1 = searchsortedfirst_impl(h[:,j], x[i,j]) - 1
     k2 = one(typeof(k1))
 
-   # Is inside of range
-   isinside = (k1 < K) && (k1 > 0)
-   k = Base.ifelse(isinside, k1, k2)
+    # Is inside of range
+    isinside = (k1 < K) && (k1 > 0)
+    k = Base.ifelse(isinside, k1, k2)
 
     x_tmp = Base.ifelse(isinside, x[i,j], h[k,j]) # Simplifies unnecessary calculations
     (yᵢⱼ, LogJacᵢⱼ) = eval_backward_spline_params(w[k,j], w[k+1,j], h[k,j], h[k+1,j], d[k,j], d[k+1,j], x_tmp)
