@@ -10,33 +10,20 @@ function CouplingRQSpline(n_dims::Integer, K::Integer = 20)
     return CouplingRQSpline(nn1, nn2)
 end
 
-function get_weights(n_dims::Integer)
+# function CouplingRQSpline(w1::AbstractMatrix, w2::AbstractMatrix, K::Integer = 20)
 
-    d = n_dims > 2 ? round(Integer, n_dims / 2) : 1
+#     nn1 = Chain(Dense(w1, true, relu),
+#                 Dense(20 => 20, relu),
+#                 Dense(20 => (3K-1))
+#                 )
 
-    w1 = Flux.glorot_uniform(20, d)
-    w2 = Flux.glorot_uniform(20, d)
-
-    return w1, w2
-end
-
-export get_weights
-
-function CouplingRQSpline(w1::AbstractMatrix, w2::AbstractMatrix, K::Integer = 20)
-
-    nn1 = Chain(Dense(w1, true, relu),
-                Dense(20 => 20, relu),
-                Dense(20 => (3K-1))
-                )
-
-    nn2 = Chain(Dense(w2, true, relu),
-                Dense(20 => 20, relu),
-                Dense(20 => (3K-1))
-                )
+#     nn2 = Chain(Dense(w2, true, relu),
+#                 Dense(20 => 20, relu),
+#                 Dense(20 => (3K-1))
+#                 )
     
-    return CouplingRQSpline(nn1, nn2)
-end
-
+#     return CouplingRQSpline(nn1, nn2)
+# end
 
 export CouplingRQSpline
 @functor CouplingRQSpline
@@ -93,21 +80,28 @@ end
 
 function coupling_trafo(trafo::Union{CouplingRQSpline, CouplingRQSplineInv}, x::AbstractMatrix{<:Real})
     b = round(Int, size(x,1)/2)
-    N = size(x,2)
+    inv = trafo isa CouplingRQSplineInv 
 
     x₁ = x[1:b, :]
     x₂ = x[b+1:end, :]
 
-    θ1 = trafo.nn1(x₂)
-    K = Int((size(θ1,1) / b + 1) / 3)
-    w1, h1, d1 = get_params(θ1, N, K)
-    Spline1 = trafo isa CouplingRQSpline ? RQSpline(w1, h1, d1) : RQSplineInv(w1, h1, d1)
-    y₁, LogJac₁ = spline_forward(Spline1, x₁)
-
-    θ2 = trafo.nn2(y₁)
-    w2, h2, d2 = get_params(θ2, N, K)
-    Spline2 = trafo isa CouplingRQSpline ? RQSpline(w2, h2, d2) : RQSplineInv(w2, h2, d2)
-    y₂, LogJac₂ = spline_forward(Spline2, x₂)
+    y₁, LogJac₁ = partial_coupling_trafo(trafo.nn1, x₁, x₂, inv)
+    y₂, LogJac₂ = partial_coupling_trafo(trafo.nn2, x₂, y₁, inv)
 
     return vcat(y₁, y₂), LogJac₁ + LogJac₂
 end
+
+export coupling_trafo
+
+function partial_coupling_trafo(nn::Chain, x₁::AbstractMatrix{<:Real}, x₂::AbstractMatrix{<:Real}, inv::Bool)
+    N = size(x₁,2)
+
+    θ = nn(x₂)
+    K = Int((size(θ,1) + 1) / 3)
+    w, h, d = get_params(θ, N, K)
+    spline = inv ? RQSplineInv(w, h, d) : RQSpline(w, h, d)
+
+    return with_logabsdet_jacobian(spline, x₁)
+end
+
+export partial_coupling_trafo

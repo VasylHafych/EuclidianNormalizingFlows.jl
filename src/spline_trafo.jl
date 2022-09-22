@@ -57,6 +57,27 @@ function InverseFunctions.inverse(f::TrainableRQSpline)
     return TrainableRQSplineInv(f.widths, f.heights, f.derivatives)
 end
 
+
+Base.:(==)(a::RQSpline, b::RQSpline) = a.widths == b.widths && a.heights == b.heights && a.derivatives == b.derivatives
+
+Base.isequal(a::RQSpline, b::RQSpline) = isequal(a.widths, b.widths) && isequal(a.heights, b.heights) && isequal(a.derivatives, b.derivatives)
+
+Base.hash(x::RQSpline, h::UInt) = hash(x.widths, hash(x.heights, hash(x.derivatives, hash(:RQSpline, hash(:EuclidianNormalizingFlows, h)))))
+
+(f::RQSpline)(x::AbstractMatrix{<:Real}) = spline_forward(f, x)[1]
+
+function ChangesOfVariables.with_logabsdet_jacobian(
+    f::RQSpline,
+    x::AbstractMatrix{<:Real}
+)
+    return spline_forward(f, x)
+end
+
+function InverseFunctions.inverse(f::RQSpline)
+    return RQSplineInv(f.widths, f.heights, f.derivatives)
+end
+
+
 Base.:(==)(a::TrainableRQSplineInv, b::TrainableRQSplineInv) = a.widths == b.widths && a.heights == b.heights && a.derivatives == b.derivatives
 
 Base.isequal(a::TrainableRQSplineInv, b::TrainableRQSplineInv) = isequal(a.widths, b.widths) && isequal(a.heights, b.heights) && isequal(a.derivatives, b.derivatives)
@@ -76,6 +97,27 @@ function InverseFunctions.inverse(f::TrainableRQSplineInv)
     return TrainableRQSpline(f.widths, f.heights, f.derivatives)
 end
 
+
+Base.:(==)(a::RQSplineInv, b::RQSplineInv) = a.widths == b.widths && a.heights == b.heights && a.derivatives == b.derivatives
+
+Base.isequal(a::RQSplineInv, b::RQSplineInv) = isequal(a.widths, b.widths) && isequal(a.heights, b.heights) && isequal(a.derivatives, b.derivatives)
+
+Base.hash(x::RQSplineInv, h::UInt) = hash(x.widths, hash(x.heights, hash(x.derivatives, hash(:RQSplineInv, hash(:EuclidianNormalizingFlows, h)))))
+
+(f::RQSplineInv)(x::AbstractMatrix{<:Real}) = spline_backward(f, x)[1]
+
+function ChangesOfVariables.with_logabsdet_jacobian(
+    f::RQSplineInv,
+    x::AbstractMatrix{<:Real}
+)
+    return spline_backward(f, x)
+end
+
+function InverseFunctions.inverse(f::RQSplineInv)
+    return RQSpline(f.widths, f.heights, f.derivatives)
+end
+
+
 # Transformation forward: 
 
 function spline_forward(trafo::TrainableRQSpline, x::AbstractMatrix{<:Real}; B=5.)
@@ -83,16 +125,16 @@ function spline_forward(trafo::TrainableRQSpline, x::AbstractMatrix{<:Real}; B=5
     # @assert size(trafo.widths, 1) == size(trafo.heights, 1) == size(trafo.derivatives, 1) == size(x, 1) >= 1
     # @assert size(trafo.widths, 2) == size(trafo.heights, 2) == (size(trafo.derivatives, 2) + 1) >= 2
 
-    ndims = size(x, 1)
+    nsmpls = size(x, 2)
 
     w = _cumsum(_softmax(trafo.widths))
     h = _cumsum(_softmax(trafo.heights))
     d = _softplus(trafo.derivatives)
 
-    w = hcat(repeat([-B,], ndims,1), w)
-    h = hcat(repeat([-B,], ndims,1), h)
-    d = hcat(repeat([1,], ndims,1), d)
-    d = hcat(d, repeat([1,], ndims,1))
+    w = vcat(repeat([-5,], 1, nsmpls), w)
+    h = vcat(repeat([-5,], 1, nsmpls), h)
+    d = vcat(repeat([1,], 1, nsmpls), d)
+    d = vcat(d, repeat([1,], 1, nsmpls))
 
     return spline_forward(RQSpline(w,h,d), x)
 end
@@ -235,7 +277,7 @@ end
     k = Base.ifelse(isinside, k1, k2)
 
     x_tmp = Base.ifelse(isinside, x[i,j], w[k,j]) # Simplifies calculations
-    (yᵢⱼ, LogJacᵢⱼ, ∂y∂wₖ, ∂y∂hₖ, ∂y∂dₖ, ∂LogJac∂wₖ, ∂LogJac∂hₖ, ∂LogJac∂dₖ) = eval_forward_spline_params_with_grad(w[k,j], w[k+1,j], h[k,j], h[k+1,j], d[k,j], d[k+1,j], x_tmp)
+    (yᵢⱼ, LogJacᵢⱼ, ∂y∂w, ∂y∂h, ∂y∂d, ∂LogJac∂w, ∂LogJac∂h, ∂LogJac∂d) = eval_forward_spline_params_with_grad(w[k,j], w[k+1,j], h[k,j], h[k+1,j], d[k,j], d[k+1,j], x_tmp)
 
     y[i,j] = Base.ifelse(isinside, yᵢⱼ, x[i,j]) 
     logJac[i, j] += Base.ifelse(isinside, LogJacᵢⱼ, zero(typeof(LogJacᵢⱼ)))
@@ -243,22 +285,22 @@ end
     left_edge_istrue = (1 < k < K)
     left_edge_ind = Base.ifelse(left_edge_istrue, k-1, one(typeof(k)))
 
-    @atomic ∂y∂w_tangent[i, left_edge_ind+1]      += tangent[1][i,j] * Base.ifelse(isinside * left_edge_istrue, ∂y∂wₖ[1], zero(eltype(∂y∂wₖ)))
-    @atomic ∂y∂h_tangent[i, left_edge_ind+1]      += tangent[1][i,j] * Base.ifelse(isinside * left_edge_istrue, ∂y∂hₖ[1], zero(eltype(∂y∂hₖ)))
-    @atomic ∂y∂d_tangent[i, left_edge_ind+1]      += tangent[1][i,j] * Base.ifelse(isinside * left_edge_istrue, ∂y∂dₖ[1], zero(eltype(∂y∂dₖ)))
-    @atomic ∂LogJac∂w_tangent[i, left_edge_ind+1] += tangent[2][1,j] * Base.ifelse(isinside * left_edge_istrue, ∂LogJac∂wₖ[1], zero(eltype(∂LogJac∂wₖ)))
-    @atomic ∂LogJac∂h_tangent[i, left_edge_ind+1] += tangent[2][1,j] * Base.ifelse(isinside * left_edge_istrue, ∂LogJac∂hₖ[1], zero(eltype(∂LogJac∂hₖ)))
-    @atomic ∂LogJac∂d_tangent[i, left_edge_ind+1] += tangent[2][1,j] * Base.ifelse(isinside * left_edge_istrue, ∂LogJac∂dₖ[1], zero(eltype(∂LogJac∂dₖ)))
+    @atomic ∂y∂w_tangent[left_edge_ind+1, j]      += tangent[1][i,j] * Base.ifelse(isinside * left_edge_istrue, ∂y∂w[1], zero(eltype(∂y∂w)))
+    @atomic ∂y∂h_tangent[left_edge_ind+1, j]      += tangent[1][i,j] * Base.ifelse(isinside * left_edge_istrue, ∂y∂h[1], zero(eltype(∂y∂h)))
+    @atomic ∂y∂d_tangent[left_edge_ind+1, j]      += tangent[1][i,j] * Base.ifelse(isinside * left_edge_istrue, ∂y∂d[1], zero(eltype(∂y∂d)))
+    @atomic ∂LogJac∂w_tangent[left_edge_ind+1, j] += tangent[2][1,j] * Base.ifelse(isinside * left_edge_istrue, ∂LogJac∂w[1], zero(eltype(∂LogJac∂w)))
+    @atomic ∂LogJac∂h_tangent[left_edge_ind+1, j] += tangent[2][1,j] * Base.ifelse(isinside * left_edge_istrue, ∂LogJac∂h[1], zero(eltype(∂LogJac∂h)))
+    @atomic ∂LogJac∂d_tangent[left_edge_ind+1, j] += tangent[2][1,j] * Base.ifelse(isinside * left_edge_istrue, ∂LogJac∂d[1], zero(eltype(∂LogJac∂d)))
  
     right_edge_istrue = (k < K - 1)
     right_edge_ind = Base.ifelse(right_edge_istrue, k, one(typeof(k)))
 
-    @atomic ∂y∂w_tangent[i, right_edge_ind+1]       += tangent[1][i,j] * Base.ifelse(isinside * right_edge_istrue, ∂y∂wₖ[2], zero(eltype(∂y∂wₖ)))
-    @atomic ∂y∂h_tangent[i, right_edge_ind+1]       += tangent[1][i,j] * Base.ifelse(isinside * right_edge_istrue, ∂y∂hₖ[2], zero(eltype(∂y∂hₖ)))
-    @atomic ∂y∂d_tangent[i, right_edge_ind+1]       += tangent[1][i,j] * Base.ifelse(isinside * right_edge_istrue, ∂y∂dₖ[2], zero(eltype(∂y∂dₖ)))
-    @atomic ∂LogJac∂w_tangent[i, right_edge_ind+1]  += tangent[2][1,j] * Base.ifelse(isinside * right_edge_istrue, ∂LogJac∂wₖ[2], zero(eltype(∂LogJac∂wₖ)))
-    @atomic ∂LogJac∂h_tangent[i, right_edge_ind+1]  += tangent[2][1,j] * Base.ifelse(isinside * right_edge_istrue, ∂LogJac∂hₖ[2], zero(eltype(∂LogJac∂hₖ)))
-    @atomic ∂LogJac∂d_tangent[i, right_edge_ind+1]  += tangent[2][1,j] * Base.ifelse(isinside * right_edge_istrue, ∂LogJac∂dₖ[2], zero(eltype(∂LogJac∂dₖ)))
+    @atomic ∂y∂w_tangent[right_edge_ind+1, j]       += tangent[1][i,j] * Base.ifelse(isinside * right_edge_istrue, ∂y∂w[2], zero(eltype(∂y∂w)))
+    @atomic ∂y∂h_tangent[right_edge_ind+1, j]       += tangent[1][i,j] * Base.ifelse(isinside * right_edge_istrue, ∂y∂h[2], zero(eltype(∂y∂h)))
+    @atomic ∂y∂d_tangent[right_edge_ind+1, j]       += tangent[1][i,j] * Base.ifelse(isinside * right_edge_istrue, ∂y∂d[2], zero(eltype(∂y∂d)))
+    @atomic ∂LogJac∂w_tangent[right_edge_ind+1, j]  += tangent[2][1,j] * Base.ifelse(isinside * right_edge_istrue, ∂LogJac∂w[2], zero(eltype(∂LogJac∂w)))
+    @atomic ∂LogJac∂h_tangent[right_edge_ind+1, j]  += tangent[2][1,j] * Base.ifelse(isinside * right_edge_istrue, ∂LogJac∂h[2], zero(eltype(∂LogJac∂h)))
+    @atomic ∂LogJac∂d_tangent[right_edge_ind+1, j]  += tangent[2][1,j] * Base.ifelse(isinside * right_edge_istrue, ∂LogJac∂d[2], zero(eltype(∂LogJac∂d)))
 
 end
 
@@ -375,19 +417,19 @@ end
 
 function spline_backward(trafo::TrainableRQSplineInv, x::AbstractMatrix{<:Real};   B = 5.)
 
-    @assert size(trafo.widths, 1) == size(trafo.heights, 1) == size(trafo.derivatives, 1) == size(x, 1)  >= 1
-    @assert size(trafo.widths, 2) == size(trafo.heights, 2) == (size(trafo.derivatives, 2) + 1)  >= 2
+    # @assert size(trafo.widths, 1) == size(trafo.heights, 1) == size(trafo.derivatives, 1) == size(x, 1)  >= 1
+    # @assert size(trafo.widths, 2) == size(trafo.heights, 2) == (size(trafo.derivatives, 2) + 1)  >= 2
 
-    ndims = size(x, 1)
+    nsmpls = size(x, 2)
 
     w = _cumsum(_softmax(trafo.widths))
     h = _cumsum(_softmax(trafo.heights))
     d = _softplus(trafo.derivatives)
 
-    w = hcat(repeat([-B,], ndims,1), w)
-    h = hcat(repeat([-B,], ndims,1), h)
-    d = hcat(repeat([1,], ndims,1), d)
-    d = hcat(d, repeat([1,], ndims,1))
+    w = vcat(repeat([-5,], 1, nsmpls), w)
+    h = vcat(repeat([-5,], 1, nsmpls), h)
+    d = vcat(repeat([1,], 1, nsmpls), d)
+    d = vcat(d, repeat([1,], 1, nsmpls))
 
     return spline_backward(RQSplineInv(w, h, d), x)
 end

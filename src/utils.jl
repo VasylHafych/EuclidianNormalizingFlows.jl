@@ -17,6 +17,18 @@ function _get_nns(n_dims::Integer, K::Integer = 20)
     return nn1, nn2
 end
 
+function get_weights(n_dims::Integer)
+
+    d = n_dims > 2 ? round(Integer, n_dims / 2) : 1
+
+    w1 = Flux.glorot_uniform(20, d)
+    w2 = Flux.glorot_uniform(20, d)
+
+    return w1, w2
+end
+
+export get_weights
+
 function get_params(θ::AbstractMatrix, N::Integer, K::Integer)
 
     w = _cumsum(_softmax(θ[1:K,:]))
