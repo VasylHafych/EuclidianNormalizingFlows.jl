@@ -28,7 +28,8 @@ function optimize_whitening(
     nbatches::Integer = 100, nepochs::Integer = 100,
     optstate = Optimisers.setup(optimizer, deepcopy(initial_trafo)),
     negll_history = Vector{Float64}(),
-    shuffle_samples::Bool = false
+    shuffle_samples::Bool = false,
+    #shuffle_dimensionsn::Bool = false
 )
     batchsize = round(Int, length(smpls) / nbatches)
     batches = collect(Iterators.partition(smpls, batchsize))
@@ -43,10 +44,14 @@ function optimize_whitening(
             push!(negll_hist, negll)
         end
         if shuffle_samples
-            shuffled_smpls = shuffle(smpls)
-            batches = collect(Iterators.partition(shuffled_smpls, batchsize))
+            #shuffled_smpls = shuffle(smpls)
+            smpls_flat = flatview(smpls)
+            shuffled_flat_smpls = vcat(reshape.(shuffle([smpls_flat[i,:] for i in axes(smpls_flat,1)]),1,size(smpls_flat,2))...)
+            shuffled_smpls_fin = nestedview(shuffled_flat_smpls)
+
+            batches = collect(Iterators.partition(shuffled_smpls_fin, batchsize))
         end
+
     end
     (result = trafo, optimizer_state = state, negll_history = vcat(negll_history, negll_hist))
 end
-export optimize_trafo
